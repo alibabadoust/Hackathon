@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/authentication_service.dart'; // Servisimizi import ediyoruz
 import 'register_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -31,12 +32,17 @@ class _LoginScreenState extends State<LoginScreen> {
     var user = await _authService.loginUser(email, password);
 
     if (user != null) {
-      print("Giriş Başarılı: ${user.email}");
-      // Burada daha sonra Ana Sayfaya yönlendirme yapacağız
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Giriş Başarılı!")),
+         print("Giriş Başarılı: ${user.email}");
+      
+     
+        Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen()),
       );
-    } else {
+      
+    } else
+     {
+    
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Giriş Başarısız! E-posta veya şifre hatalı.")),
       );
