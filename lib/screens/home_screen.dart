@@ -4,6 +4,7 @@ import '../services/database_service.dart'; // Veritabani servisini
 import '../models/notification_model.dart'; 
 import 'login_screen.dart';
 import 'create_notification_screen.dart';
+import 'notification_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -99,11 +100,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   subtitle: Text("${notification.type} • ${notification.status}"),
                   trailing: Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    // Buraya tiklandiginda detay sayfasi acilacak
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Detaylar yakında...")),
-                    );
-                  },
+  // Detay sayfasına git ve veriyi gönder
+                        Navigator.push(
+                        context,
+                       MaterialPageRoute(
+                        builder: (context) => NotificationDetailScreen(notification: notification),
+                     ),
+                   );
+                 },
                 ),
               );
             },
