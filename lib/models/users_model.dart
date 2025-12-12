@@ -5,6 +5,8 @@ class UserModel {
   final String department;
   final String role; //user veya admin
 
+  bool get isAdmin => role.toLowerCase() == 'admin';
+
   UserModel({
     required this.uid,
     required this.email,

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../services/authentication_service.dart';
+import '../models/users_model.dart';
+import 'home_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   @override
-  _RegisterScreenState createState() => _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
@@ -11,102 +13,112 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _departmentController = TextEditingController();
-
   final AuthenticationService _authService = AuthenticationService();
   bool _isLoading = false;
 
-  void _register() async {
-    String name = _nameController.text.trim();
-    String email = _emailController.text.trim();
-    String password = _passwordController.text.trim();
-    String department = _departmentController.text.trim();
+  Future<void> _register() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final department = _departmentController.text.trim();
 
     if (name.isEmpty || email.isEmpty || password.isEmpty || department.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Lütfen tüm alanları doldurun!")),
-      );
+      _showSnack("Lütfen tüm alanları doldurun!");
+      return;
+    }
+    if (password.length < 6) {
+      _showSnack("Şifre en az 6 karakter olmalı.");
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Kayıt işlemini başlat
-    var user = await _authService.registerUser(email, password, name, department);
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (user != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Kayıt Başarılı! Giriş yapabilirsiniz.")),
-      );
-      // Kayıt başarılıysa giriş ekranına geri dön
-      Navigator.pop(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Kayıt Başarısız! Lütfen tekrar deneyin.")),
-      );
+    setState(() => _isLoading = true);
+    final user = await _authService.registerUser(email, password, name, department);
+    if (user == null) {
+      _showSnack("Kayıt başarısız. Lütfen tekrar deneyin.");
+      setState(() => _isLoading = false);
+      return;
     }
+
+    final profile = UserModel(
+      uid: user.uid,
+      email: email,
+      fullName: name,
+      department: department,
+      role: 'user',
+    );
+
+    setState(() => _isLoading = false);
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => HomeScreen(currentUser: profile)),
+      (route) => false,
+    );
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text("Yeni Hesap Oluştur")),
-      body: SingleChildScrollView( // Klavye açılınca taşmayı önler
-        padding: const EdgeInsets.all(16.0),
+      appBar: AppBar(title: const Text("Yeni Hesap Oluştur")),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
+            Text("Varsayılan rol: User", style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 16),
             TextField(
               controller: _nameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: "Ad Soyad",
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.person),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextField(
               controller: _departmentController,
-              decoration: InputDecoration(
-                labelText: "Bölüm (Department)",
+              decoration: const InputDecoration(
+                labelText: "Birim / Bölüm",
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.school),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextField(
               controller: _emailController,
-              decoration: InputDecoration(
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
                 labelText: "E-posta",
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.email),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
               obscureText: true,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: "Şifre",
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.lock),
               ),
             ),
-            SizedBox(height: 24),
-            
-            _isLoading
-                ? CircularProgressIndicator()
-                : ElevatedButton(
-                    onPressed: _register,
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: Size(double.infinity, 50),
-                    ),
-                    child: Text("Kayıt Ol", style: TextStyle(fontSize: 18)),
-                  ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _register,
+                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                child: _isLoading
+                    ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text("Kayıt Ol"),
+              ),
+            ),
           ],
         ),
       ),
