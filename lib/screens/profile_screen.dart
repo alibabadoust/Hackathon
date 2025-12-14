@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/users_model.dart';
+import '../models/notification_model.dart';
+import '../services/database_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   final UserModel currentUser;
@@ -12,6 +14,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool pushEnabled = true;
   bool emailEnabled = false;
+  final DatabaseService _databaseService = DatabaseService();
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +46,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onChanged: (v) => setState(() => emailEnabled = v),
             ),
             const SizedBox(height: 12),
+            const Text("Takip Edilen Bildirimler", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: StreamBuilder<List<NotificationModel>>(
+                stream: _databaseService.getNotifications(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final followed = (snapshot.data ?? [])
+                      .where((n) => n.followers.contains(widget.currentUser.uid))
+                      .toList();
+                  if (followed.isEmpty) return const Text("Takip ettiğiniz bildirim bulunmuyor.");
+                  return ListView.builder(
+                    itemCount: followed.length,
+                    itemBuilder: (context, index) {
+                      final n = followed[index];
+                      return ListTile(
+                        leading: const Icon(Icons.bookmark),
+                        title: Text(n.title),
+                        subtitle: Text("${n.type} • ${n.status}"),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
             const Text("Not: Bu ayarlar demo amaçlıdır, gerçek bildirim servisine bağlayabilirsiniz."),
           ],
         ),

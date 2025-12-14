@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -5,6 +7,9 @@ import '../models/notification_model.dart';
 import '../models/users_model.dart';
 import '../services/database_service.dart';
 import '../services/authentication_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class CreateNotificationScreen extends StatefulWidget {
   final UserModel currentUser;
@@ -23,7 +28,7 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
   final TextEditingController _lngController =
       TextEditingController(text: NotificationModel.defaultLng.toString());
 
-  final List<String> _types = ['Saglik', 'Guvenlik', 'Teknik Ariza', 'Kayip Esya', 'Diger'];
+  final List<String> _types = ['Acil', 'Saglik', 'Guvenlik', 'Teknik Ariza', 'Kayip Esya', 'Diger'];
   String? _selectedType;
 
   final DatabaseService _databaseService = DatabaseService();
@@ -31,6 +36,9 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
   
   bool _isLoading = false;
   LatLng? _selectedPoint;
+  bool _locating = false;
+  XFile? _pickedImage;
+  bool _uploadingImage = false;
 
   @override
   void dispose() {
@@ -39,6 +47,31 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
     _latController.dispose();
     _lngController.dispose();
     super.dispose();
+  }
+
+  Future<void> _useCurrentLocation() async {
+    setState(() => _locating = true);
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      setState(() => _locating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Konum izni verilmedi. Haritadan seçebilirsiniz.")),
+      );
+      return;
+    }
+    try {
+      final pos = await Geolocator.getCurrentPosition();
+      _setPointFromMap(LatLng(pos.latitude, pos.longitude));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Konum alınamadı. Haritadan seçin.")),
+      );
+    } finally {
+      setState(() => _locating = false);
+    }
   }
 
   Future<void> _submitReport() async {
@@ -71,6 +104,27 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
     }
 
     final reportId = DateTime.now().millisecondsSinceEpoch.toString();
+    String? imageUrl;
+
+    if (_pickedImage != null) {
+      try {
+        setState(() => _uploadingImage = true);
+        final ref = FirebaseStorage.instance.ref('notification_images/$reportId.jpg');
+        if (kIsWeb) {
+          final bytes = await _pickedImage!.readAsBytes();
+          await ref.putData(bytes);
+        } else {
+          await ref.putFile(File(_pickedImage!.path));
+        }
+        imageUrl = await ref.getDownloadURL();
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Fotoğraf yüklenemedi, bildiriminiz resimsiz kaydedildi.")),
+        );
+      } finally {
+        setState(() => _uploadingImage = false);
+      }
+    }
 
     final notification = NotificationModel(
       id: reportId,
@@ -80,7 +134,7 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
       type: _selectedType!,
       status: 'Açık',
       createdAt: DateTime.now(),
-      imageUrl: null,
+      imageUrl: imageUrl,
       latitude: latitude,
       longitude: longitude,
       department: widget.currentUser.department,
@@ -152,8 +206,49 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
                 validator: (value) => value == null || value.isEmpty ? "Açıklama boş olamaz" : null,
               ),
               const SizedBox(height: 16),
-              Text("Konum seçin (harita veya koordinat girin):",
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final picker = ImagePicker();
+                      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+                      if (picked != null) {
+                        setState(() => _pickedImage = picked);
+                      }
+                    },
+                    icon: const Icon(Icons.add_a_photo),
+                    label: const Text("Fotoğraf Ekle (opsiyonel)"),
+                  ),
+                  const SizedBox(width: 12),
+                  if (_pickedImage != null) const Icon(Icons.check_circle, color: Colors.green),
+                ],
+              ),
+              if (_pickedImage != null) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: kIsWeb
+                      ? Image.network(_pickedImage!.path, height: 120, fit: BoxFit.cover)
+                      : Image.file(File(_pickedImage!.path), height: 120, fit: BoxFit.cover),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Text("Konum seçin (cihaz konumu veya harita):",
                   style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _locating ? null : _useCurrentLocation,
+                    icon: _locating
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.my_location),
+                    label: const Text("Konumumu Kullan"),
+                  ),
+                  const SizedBox(width: 12),
+                  Text("Ya da haritadan noktaya dokun.", style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
               const SizedBox(height: 8),
               SizedBox(
                 height: 220,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/notification_model.dart';
 import '../models/users_model.dart';
 import '../services/database_service.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class NotificationDetailScreen extends StatefulWidget {
   final NotificationModel notification;
@@ -101,10 +103,50 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text("Oluşturulma: ${_formatDate(n.createdAt)}"),
-              const SizedBox(height: 8),
-              Text("Konum: ${n.latitude.toStringAsFixed(5)}, ${n.longitude.toStringAsFixed(5)}"),
-              const SizedBox(height: 16),
+              if (n.imageUrl != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(n.imageUrl!, height: 180, fit: BoxFit.cover),
+                ),
+              const SizedBox(height: 12),
+      Text("Oluşturulma: ${_formatDate(n.createdAt)}"),
+      const SizedBox(height: 8),
+      Text("Konum: ${n.latitude.toStringAsFixed(5)}, ${n.longitude.toStringAsFixed(5)}"),
+      const SizedBox(height: 8),
+      SizedBox(
+        height: 180,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: FlutterMap(
+            options: MapOptions(
+              initialCenter: LatLng(n.latitude, n.longitude),
+              initialZoom: 16,
+              interactionOptions: const InteractionOptions(
+                enableMultiFingerGestureRace: true,
+                flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+              ),
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c'],
+                userAgentPackageName: 'com.example.smart_campus',
+              ),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: LatLng(n.latitude, n.longitude),
+                    width: 36,
+                    height: 36,
+                    child: const Icon(Icons.location_pin, color: Colors.red, size: 32),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
               Row(
                 children: [
                   ElevatedButton.icon(

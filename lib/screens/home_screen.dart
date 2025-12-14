@@ -8,6 +8,7 @@ import 'create_notification_screen.dart';
 import 'notification_detail_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
+import 'admin_panel_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserModel currentUser;
@@ -101,10 +102,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Color _getStatusColor(String status) {
-    final normalized = status.toLowerCase();
-    if (normalized.contains('aç') || normalized.contains('open')) return Colors.red;
+    final normalized = _normalize(status);
+    if (normalized.contains('ac') || normalized.contains('open')) return Colors.red;
     if (normalized.contains('ince') || normalized.contains('under')) return Colors.orange;
-    if (normalized.contains('çöz') || normalized.contains('res')) return Colors.green;
+    if (normalized.contains('coz') || normalized.contains('res')) return Colors.green;
     return Colors.grey;
   }
 
@@ -160,8 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final query = _searchController.text.toLowerCase();
     return items.where((n) {
       final matchType = _selectedType == 'Tümü' || _normalize(n.type) == _normalize(_selectedType);
-      final statusLower = n.status.toLowerCase();
-      final matchOpen = !_onlyOpen || statusLower.contains('aç') || statusLower.contains('open');
+      final statusLower = _normalize(n.status);
+      final matchOpen = !_onlyOpen || statusLower.contains('ac') || statusLower.contains('open');
       final matchFollow = !_onlyFollowed || n.followers.contains(widget.currentUser.uid);
       final matchDept = !_onlyDepartment ||
           (n.department.isNotEmpty &&
@@ -196,6 +197,19 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.warning_amber),
               tooltip: "Acil Uyarı Yayınla",
               onPressed: _openEmergencyDialog,
+            ),
+          if (widget.currentUser.isAdmin)
+            IconButton(
+              icon: const Icon(Icons.dashboard_customize),
+              tooltip: "Admin Paneli",
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AdminPanelScreen(currentUser: widget.currentUser),
+                  ),
+                );
+              },
             ),
           IconButton(
             icon: const Icon(Icons.map),
@@ -241,6 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               items: const [
                 'Tümü',
+                'Acil',
                 'Saglik',
                 'Guvenlik',
                 'Teknik Ariza',
