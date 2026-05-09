@@ -118,7 +118,7 @@ def allowed_file(filename: str) -> bool:
 
 def analyze_with_gemini(image_path: Path, zero_g_mode: bool) -> str:
     """Send the image to Google Gemini Vision API and return analysis text."""
-    model = genai.GenerativeModel("gemini-1.5-flash")  # Free tier model
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     # Read and base64-encode image
     with open(image_path, "rb") as f:
