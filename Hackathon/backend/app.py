@@ -120,9 +120,9 @@ def analyze_with_gemini(image_path: Path, zero_g_mode: bool) -> str:
     """Send the image to Google Gemini Vision API and return analysis text."""
     model = genai.GenerativeModel("gemini-1.5-flash")  # Free tier model
 
-    # Read image as bytes
+    # Read and base64-encode image
     with open(image_path, "rb") as f:
-        image_data = f.read()
+        image_data = base64.b64encode(f.read()).decode("utf-8")
 
     # Determine MIME type
     ext = image_path.suffix.lower().lstrip(".")
@@ -137,7 +137,12 @@ def analyze_with_gemini(image_path: Path, zero_g_mode: bool) -> str:
         prompt += "\n\nPlease analyze this outfit image."
 
     response = model.generate_content([
-        {"mime_type": mime_type, "data": image_data},
+        {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": image_data
+            }
+        },
         prompt
     ])
 
