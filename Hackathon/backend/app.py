@@ -228,7 +228,7 @@ def call_gemini_with_retry(image_bytes: bytes, mime_type: str, prompt: str) -> s
             logger.info(f"🤖 Gemini API call (attempt {attempt}/{MAX_RETRIES})")
 
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=[
                     types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                     types.Part.from_text(text=prompt),
