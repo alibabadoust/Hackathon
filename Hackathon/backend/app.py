@@ -1,12 +1,11 @@
 """
 ChromaGuide Backend - Flask API
 ================================
-Backend server that handles image analysis via Claude Vision API
-and returns the analysis text. Text-to-speech is handled on the
-device using expo-speech (free, no API key required).
+Backend server that handles image analysis via Google Gemini Vision API (FREE).
+Text-to-speech is handled on the device using expo-speech.
 
 Environment Variables Required:
-  - ANTHROPIC_API_KEY: Your Claude API key
+  - GEMINI_API_KEY: Your Google Gemini API key (free from aistudio.google.com)
 
 Endpoints:
   POST /analyze     — Upload an image for outfit analysis
@@ -20,11 +19,11 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-import anthropic
+import google.generativeai as genai
 
 ANTIGRAVITY_LOADED = True  # 🥚 Easter egg flag
 
@@ -32,7 +31,7 @@ ANTIGRAVITY_LOADED = True  # 🥚 Easter egg flag
 # Configuration
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
-CORS(app)  # Allow cross-origin requests from the React Native app
+CORS(app)
 
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "chromaguide-hackathon-2026")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max upload
@@ -45,35 +44,28 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chromaguide")
 
-# ---------------------------------------------------------------------------
-# Claude Vision — System Prompt
-# ---------------------------------------------------------------------------
-SYSTEM_PROMPT_BASE = """\
-You are **ChromaGuide**, a highly descriptive fashion and color-matching assistant \
-designed specifically for blind and visually impaired users.
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-## Your Core Responsibilities
-1. **Color Identification** — Describe every visible color in the outfit using \
-vivid, everyday language (e.g., "sky blue", "warm honey gold", "charcoal grey"). \
-Avoid hex codes or technical jargon.
-2. **Garment Description** — Identify each clothing item (shirt, trousers, jacket, \
-shoes, accessories, etc.) and describe its style, fit, and texture if visible.
-3. **Color Compatibility Rating** — Rate the overall color harmony on a scale of \
-1–10 and explain *why* (complementary, analogous, clashing, etc.).
-4. **Practical Recommendations** — Suggest 1–2 small changes that could improve \
-the outfit (e.g., "A navy belt would tie the look together").
-5. **Occasion Suitability** — Briefly note whether the outfit works for casual, \
-business, formal, or outdoor settings.
+# ---------------------------------------------------------------------------
+# System Prompt
+# ---------------------------------------------------------------------------
+SYSTEM_PROMPT_BASE = """You are ChromaGuide, a highly descriptive fashion and color-matching assistant designed specifically for blind and visually impaired users.
 
-## Output Format
-Structure your response EXACTLY like this so it is screen-reader friendly:
+Your Core Responsibilities:
+1. Color Identification - Describe every visible color in the outfit using vivid, everyday language (e.g., "sky blue", "warm honey gold", "charcoal grey"). Avoid hex codes or technical jargon.
+2. Garment Description - Identify each clothing item (shirt, trousers, jacket, shoes, accessories, etc.) and describe its style, fit, and texture if visible.
+3. Color Compatibility Rating - Rate the overall color harmony on a scale of 1-10 and explain why (complementary, analogous, clashing, etc.).
+4. Practical Recommendations - Suggest 1-2 small changes that could improve the outfit.
+5. Occasion Suitability - Briefly note whether the outfit works for casual, business, formal, or outdoor settings.
+
+Structure your response EXACTLY like this:
 
 Outfit Overview:
 [2-3 sentence high-level description]
 
 Colors Detected:
 - [Item]: [Color description]
-- ...
 
 Color Harmony Score: [X] out of 10
 [1-2 sentence explanation]
@@ -87,41 +79,30 @@ Recommendations:
 
 Occasion: [Casual / Business / Formal / Outdoor / etc.]
 
-## Important Rules
-- Use PLAIN TEXT only. Do NOT use markdown bold (**), headings (#), or any formatting \
-that a screen reader cannot parse naturally.
-- Keep your total response under 250 words for conciseness.
-- Speak as if describing to a friend — warm, clear, and helpful.
-"""
+Important: Use PLAIN TEXT only. Keep your total response under 250 words. Speak warmly and clearly."""
 
 ZERO_G_ADDON = """
 
-## ZERO-GRAVITY MODE ACTIVATED
-In addition to ALL of the above, you MUST also evaluate the outfit for \
-zero-gravity / space-station safety and aesthetics. Apply these extra rules:
+ZERO-GRAVITY MODE ACTIVATED - Also evaluate the outfit for zero-gravity safety:
 
-6. **Float Risk Assessment** — Identify any loose items that would float, drift, \
-or become hazards in microgravity.
-7. **Space Aesthetic Rating** — Rate the outfit's "Space-Readiness" on a scale of \
-1–10.
-8. **Antigravity Recommendation** — Suggest one modification that would make the \
-outfit both fashionable AND zero-G safe.
+6. Float Risk Assessment - Identify any loose items that would float or become hazards in microgravity.
+7. Space Aesthetic Rating - Rate the outfit Space-Readiness on a scale of 1-10.
+8. Antigravity Recommendation - Suggest one modification for zero-G safety.
 
-Add this section to your response:
+Add this section:
 
 Zero-G Safety Report:
 - Float Risk: [Low / Medium / High]
-- [List each hazard item and the risk]
+- [List each hazard]
 
 Space-Readiness Score: [X] out of 10
 [Explanation]
 
 Antigravity Recommendation:
-[Your suggestion for making this outfit zero-G fabulous]
-"""
+[Your suggestion]"""
 
 
-def build_system_prompt(zero_g_mode: bool) -> str:
+def build_prompt(zero_g_mode: bool) -> str:
     prompt = SYSTEM_PROMPT_BASE
     if zero_g_mode:
         prompt += ZERO_G_ADDON
@@ -135,61 +116,32 @@ def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def encode_image_to_base64(filepath: Path) -> str:
-    with open(filepath, "rb") as f:
-        return base64.standard_b64encode(f.read()).decode("utf-8")
+def analyze_with_gemini(image_path: Path, zero_g_mode: bool) -> str:
+    """Send the image to Google Gemini Vision API and return analysis text."""
+    model = genai.GenerativeModel("gemini-1.5-flash")  # Free tier model
 
+    # Read image as bytes
+    with open(image_path, "rb") as f:
+        image_data = f.read()
 
-def get_media_type(filename: str) -> str:
-    ext = filename.rsplit(".", 1)[1].lower()
-    mapping = {
-        "png": "image/png",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "webp": "image/webp",
-        "gif": "image/gif",
-    }
-    return mapping.get(ext, "image/jpeg")
+    # Determine MIME type
+    ext = image_path.suffix.lower().lstrip(".")
+    mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                "webp": "image/webp", "gif": "image/gif"}
+    mime_type = mime_map.get(ext, "image/jpeg")
 
-
-def analyze_with_claude(image_path: Path, zero_g_mode: bool) -> str:
-    """Send the image to Claude Vision API and return the outfit analysis text."""
-    client = anthropic.Anthropic()  # Uses ANTHROPIC_API_KEY env var
-
-    image_b64 = encode_image_to_base64(image_path)
-    media_type = get_media_type(image_path.name)
-    system_prompt = build_system_prompt(zero_g_mode)
-
-    user_message = "Please analyze this outfit image."
+    prompt = build_prompt(zero_g_mode)
     if zero_g_mode:
-        user_message += " Zero-Gravity Mode is ACTIVE — include the full space safety assessment."
+        prompt += "\n\nPlease analyze this outfit image. Zero-Gravity Mode is ACTIVE."
+    else:
+        prompt += "\n\nPlease analyze this outfit image."
 
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1500,
-        system=system_prompt,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": user_message,
-                    },
-                ],
-            }
-        ],
-    )
+    response = model.generate_content([
+        {"mime_type": mime_type, "data": image_data},
+        prompt
+    ])
 
-    return message.content[0].text
+    return response.text
 
 
 # ---------------------------------------------------------------------------
@@ -197,13 +149,14 @@ def analyze_with_claude(image_path: Path, zero_g_mode: bool) -> str:
 # ---------------------------------------------------------------------------
 @app.route("/health", methods=["GET"])
 def health_check():
-    """Health check endpoint for deployment platforms."""
+    """Health check endpoint."""
     return jsonify({
         "status": "healthy",
         "service": "ChromaGuide API",
-        "version": "2.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "3.0.0",
+        "ai_model": "Google Gemini 1.5 Flash (Free)",
         "tts": "on-device (expo-speech)",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "antigravity_loaded": ANTIGRAVITY_LOADED,
     })
 
@@ -211,55 +164,30 @@ def health_check():
 @app.route("/analyze", methods=["POST"])
 def analyze_outfit():
     """
-    Main endpoint: accepts an image upload and returns outfit analysis text.
-    Text-to-speech is handled on the device (expo-speech) — no Google TTS needed.
-
-    Request:
-      - Form field 'image': the outfit image file
-      - Form field 'zero_g_mode': "true" or "false" (optional, defaults to false)
-
-    Response JSON:
-      {
-        "success": true,
-        "analysis_text": "...",
-        "zero_g_mode": true/false,
-        "antigravity_easter_egg": true/false
-      }
+    Main endpoint: accepts an image and returns outfit analysis.
+    Uses Google Gemini Vision (free tier).
     """
-    # --- Validate image upload ---
     if "image" not in request.files:
-        return jsonify({
-            "success": False,
-            "error": "No image file provided. Please upload an outfit photo."
-        }), 400
+        return jsonify({"success": False, "error": "No image file provided."}), 400
 
     file = request.files["image"]
     if file.filename == "":
-        return jsonify({
-            "success": False,
-            "error": "Empty filename. Please select a valid image."
-        }), 400
+        return jsonify({"success": False, "error": "Empty filename."}), 400
 
     if not allowed_file(file.filename):
-        return jsonify({
-            "success": False,
-            "error": f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
-        }), 400
+        return jsonify({"success": False, "error": f"Unsupported file type."}), 400
 
-    # --- Parse Zero-G mode ---
     zero_g_mode = request.form.get("zero_g_mode", "false").lower() == "true"
 
-    # --- Save uploaded image ---
     filename = secure_filename(file.filename)
     unique_name = f"{uuid.uuid4().hex}_{filename}"
     image_path = UPLOAD_DIR / unique_name
     file.save(str(image_path))
-    logger.info(f"Image saved: {image_path} | Zero-G Mode: {zero_g_mode}")
+    logger.info(f"Image saved: {image_path} | Zero-G: {zero_g_mode}")
 
     try:
-        # --- Analyze with Claude Vision ---
-        analysis_text = analyze_with_claude(image_path, zero_g_mode)
-        logger.info("Claude analysis complete.")
+        analysis_text = analyze_with_gemini(image_path, zero_g_mode)
+        logger.info("Gemini analysis complete.")
 
         return jsonify({
             "success": True,
@@ -268,22 +196,11 @@ def analyze_outfit():
             "antigravity_easter_egg": zero_g_mode,
         }), 200
 
-    except anthropic.APIError as e:
-        logger.error(f"Claude API error: {e}")
-        return jsonify({
-            "success": False,
-            "error": "AI analysis failed. Please try again."
-        }), 502
-
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Something went wrong. Please try again."
-        }), 500
+        logger.error(f"Error: {e}")
+        return jsonify({"success": False, "error": "Analysis failed. Please try again."}), 500
 
     finally:
-        # Clean up uploaded image to save space
         if image_path.exists():
             image_path.unlink()
 
@@ -294,6 +211,5 @@ def analyze_outfit():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("FLASK_ENV", "development") == "development"
-    logger.info(f"🚀 ChromaGuide API starting on port {port}")
-    logger.info(f"🛸 Antigravity flag active — Zero-G Mode available!")
+    logger.info(f"🚀 ChromaGuide API starting on port {port} — Powered by Gemini (Free!)")
     app.run(host="0.0.0.0", port=port, debug=debug)
