@@ -228,7 +228,7 @@ def call_gemini_with_retry(image_bytes: bytes, mime_type: str, prompt: str) -> s
             logger.info(f"🤖 Gemini API call (attempt {attempt}/{MAX_RETRIES})")
 
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-1.5-flash",
                 contents=[
                     types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                     types.Part.from_text(text=prompt),
@@ -298,8 +298,8 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "ChromaGuide API",
-        "version": "5.0.0",
-        "ai_model": "Google Gemini 2.0 Flash (Free)",
+        "version": "5.1.0",
+        "ai_model": "Google Gemini 1.5 Flash (Free)",
         "features": [
             "exponential_backoff_retry",
             "image_compression",
