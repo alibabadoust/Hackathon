@@ -353,7 +353,7 @@ def analyze_outfit():
         else:
             return jsonify({
                 "success": False,
-                "error": "Analysis failed. Please try again."
+                "error": f"Debug Error: {str(e)}"
             }), 500
 
 
